@@ -12,6 +12,7 @@
   "dependencies": {
     "@google/genai": "^1.19.0",
     "@modelcontextprotocol/sdk": "^1.18.0",
+    "axios": "^1.12.1",
     "flyonui": "^2.4.0",
     "next": "15.5.3",
     "react": "19.1.0",
