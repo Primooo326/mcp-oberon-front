@@ -1,103 +1,144 @@
-import Image from "next/image";
+"use client";
+import { useEffect, useState, useRef } from "react";
+import useChatStore from "../store";
+import { GoogleGenAI, mcpToTool, Chat as GenAIChat } from "@google/genai";
+import { GOOGLE_API_KEY } from "@/config";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
-export default function Home() {
+const OBERON_HTTP_URL = "http://localhost:3001/mcp";
+const OBERON_API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI3Mjg0MTc1NS0zRjNELTQyNjYtQUI3QS1DRjBFMUQ3RUIyM0QiLCJjbGllbnRJZCI6IkZDOUNFQ0VGLTkzQjktRUYxMS04OEQwLTYwNDVCRDc5OTBFMSIsImlhdCI6MTc1NzY5MDU4OSwiZXhwIjoxNzU3Nzc2OTg5fQ.6hWNKh-gLCWwENOHpeDkgYhCFY4eTVoORbrMrUllkE";
+
+export default function Chat() {
+  const { messages, addMessage, updateLastMessage, chatSession, setChatSession } = useChatStore();
+  const [inputValue, setInputValue] = useState("");
+  const [isStreaming, setIsStreaming] = useState(false);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    // Definimos client aquí para que sea accesible en la función de limpieza
+    let client: Client;
+
+    const initChat = async () => {
+      console.log("Iniciando conexión del chat...");
+
+      const transport = new StreamableHTTPClientTransport(new URL(OBERON_HTTP_URL), {
+        requestInit: {
+          headers: {
+            'x-api-key': OBERON_API_KEY,
+          }
+        }
+      });
+
+      client = new Client({
+        name: "example-client",
+        version: "1.0.0"
+      });
+
+      try {
+        await client.connect(transport);
+
+        const ai = new GoogleGenAI({
+          apiKey: GOOGLE_API_KEY
+        });
+
+        const chat = ai.chats.create({
+          config: {
+            tools: [
+              mcpToTool(client)
+            ]
+          },
+          model: "gemini-1.5-flash",
+        });
+
+        setChatSession(chat as GenAIChat);
+        console.log("✅ Chat inicializado y listo. Session ID:", transport.sessionId);
+
+      } catch (error) {
+        console.error("❌ Falló la inicialización del chat:", error);
+      }
+    };
+
+    initChat();
+
+    // --- LA SOLUCIÓN DEFINITIVA ESTÁ AQUÍ ---
+    // Esta función se ejecuta cuando el componente se desmonta (debido al Strict Mode).
+    return () => {
+      if (client) {
+        console.log("🧹 Ejecutando limpieza de useEffect y cerrando conexión MCP...");
+        client.close();
+      }
+    };
+
+  }, [setChatSession]); // Dejamos setChatSession para seguir las buenas prácticas de React
+
+  useEffect(() => {
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+    }
+  }, [messages]);
+
+  const handleSendMessage = async () => {
+    if (inputValue.trim() && chatSession && !isStreaming) {
+      const userMessage = { text: inputValue, sender: "user" };
+      addMessage(userMessage);
+      setInputValue("");
+      setIsStreaming(true);
+
+      addMessage({ text: "", sender: "model" });
+
+      try {
+        const stream = await chatSession.sendMessageStream({
+          message: inputValue,
+        });
+
+        for await (const chunk of stream) {
+          updateLastMessage(chunk.text);
+        }
+      } catch (error) {
+        console.error("Error al enviar el mensaje:", error);
+        updateLastMessage("Lo siento, ocurrió un error.");
+      } finally {
+        setIsStreaming(false);
+      }
+    }
+  };
+
   return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
-
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+    <div className="flex flex-col h-screen bg-base-300 p-8 items-center gap-4">
+      <div ref={chatContainerRef} className="flex-grow p-6 overflow-auto w-2/3 bg-base-200 rounded-2xl">
+        <div className="chat-container">
+          {messages.map((message, index) => (
+            <div
+              key={index}
+              className={`chat ${message.sender === "user" ? "chat-end" : "chat-start"}`}
+            >
+              <div className={`chat-bubble ${message.sender === "user" ? "chat-bubble-primary" : ""}`}>{message.text}</div>
+            </div>
+          ))}
+          {!chatSession && <span className="loading loading-dots loading-lg"></span>}
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
+      </div>
+      <div className="p-6 bg-base-200 w-2/3 rounded-2xl">
+        <div className="flex gap-4">
+          <input
+            type="text"
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleSendMessage()}
+            placeholder={!chatSession ? "Conectando..." : (isStreaming ? "Esperando respuesta..." : "Escribe tu mensaje...")}
+            className="input input-bordered flex-grow"
+            disabled={isStreaming || !chatSession}
           />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+          <button
+            onClick={handleSendMessage}
+            className="btn btn-primary"
+            disabled={isStreaming || !chatSession}
+          >
+            {isStreaming ? <span className="loading loading-spinner"></span> : "Send"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

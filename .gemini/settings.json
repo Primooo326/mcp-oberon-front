@@ -1,0 +1,20 @@
+{
+    "mcpServers": {
+        "oberonSHTTP": {
+            "httpUrl": "http://192.99.246.129:3001/mcp",
+            "headers": {
+                "x-api-key": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI3Mjg0MTc1NS0zRjNELTQyNjYtQUI3QS1DRjBFMUQ3RUIyM0QiLCJjbGllbnRJZCI6IkZDOUNFQ0VGLTkzQjktRUYxMS04OEQwLTYwNDVCRDc5OTBFMSIsImlhdCI6MTc1NzY5MDU4OSwiZXhwIjoxNzU3Nzc2OTg5fQ.6hWNKh-gLCWwENOHpeDkgYhCFjY4eTVoORbrMrUllkE"
+            }
+        },
+        "Context7": {
+            "command": "npx",
+            "args": [
+                "-y",
+                "@upstash/context7-mcp@latest"
+            ]
+        },
+        "deepwiki": {
+            "httpUrl": "https://mcp.deepwiki.com/mcp"
+        }
+    }
+}
