@@ -2,7 +2,7 @@
 import { useEffect, useState, useRef } from "react";
 import useChatStore, { Message } from "../store";
 import { GoogleGenAI, mcpToTool } from "@google/genai";
-import { GOOGLE_API_KEY, MCP_SERVER_URL } from "@/config";
+import { GOOGLE_API_KEY, MCP_SERVER_URL, SYSTEM_PROMPT_LUNA } from "@/config";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import LoginModal from "../components/LoginModal";
@@ -38,7 +38,7 @@ export default function ChatPage() {
 
       const ai = new GoogleGenAI({ apiKey: GOOGLE_API_KEY });
       const chat = ai.chats.create({
-        config: { tools: [mcpToTool(client)] },
+        config: { tools: [mcpToTool(client)], systemInstruction: SYSTEM_PROMPT_LUNA },
         model: "gemini-2.5-flash-lite",
       });
 

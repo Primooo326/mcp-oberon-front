@@ -28,7 +28,7 @@ interface ChatState {
 
 const useChatStore = create<ChatState>((set) => ({
   messages: [
-    { text: "¡Hola! Soy tu asistente de programación. ¿En qué te puedo ayudar hoy?", sender: "model" },
+    { text: "¡Hola! Soy Luna, la IA experta del ecosistema Oberon 360. ¿Cómo puedo ayudarte hoy?", sender: "model" },
   ],
   chatSession: null,
   addMessage: (message) =>
