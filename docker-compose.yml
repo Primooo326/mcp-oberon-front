@@ -1,7 +1,3 @@
-# docker-compose.yml
-
-version: '3.8'
-
 services:
   frontend:
     # Nombre del contenedor para identificarlo fácilmente
