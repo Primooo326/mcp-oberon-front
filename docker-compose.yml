@@ -1,0 +1,27 @@
+# docker-compose.yml
+
+version: '3.8'
+
+services:
+  frontend:
+    # Nombre del contenedor para identificarlo fácilmente
+    container_name: mcp-oberon360-front
+
+    # Construye la imagen usando el Dockerfile en el directorio actual (.)
+    build: .
+
+    # Política de reinicio: 'always' reinicia el contenedor si se detiene
+    # o si el servidor se reinicia. Ideal para producción.
+    restart: always
+
+    # Mapeo de puertos: [PUERTO_EN_LA_VM]:[PUERTO_EN_EL_CONTENEDOR]
+    # Nginx está configurado para enviar tráfico al puerto 3002 de la VM.
+    # Docker redirigirá ese tráfico al puerto 3000 dentro del contenedor,
+    # que es donde Next.js está escuchando.
+    ports:
+      - "3002:3000"
+
+    # (Opcional pero recomendado) Cargar variables de entorno desde un archivo .env
+    # Esto es ideal para manejar secretos y configuraciones sin exponerlos en el código.
+    env_file:
+      - .env
