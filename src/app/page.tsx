@@ -33,6 +33,7 @@ export default function ChatPage() {
   // Refs para manejar el temporizador y la función de envío
   const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const handleSendMessageRef = useRef<() => Promise<void>>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const initChat = async (key: string) => {
     console.log("Iniciando conexión del chat...");
@@ -50,7 +51,8 @@ export default function ChatPage() {
 
       const ai = new GoogleGenAI({ apiKey: GOOGLE_API_KEY });
       const chat = ai.chats.create({
-        config: { tools: [mcpToTool(clientOberon)], systemInstruction: SYSTEM_PROMPT_LUNA },
+        config: { tools: [mcpToTool(clientOberon)], systemInstruction: { parts: [{ text: SYSTEM_PROMPT_LUNA }] } },
+        // model: "gemini-2.5-pro",
         model: "gemini-2.5-flash-lite",
       });
 
@@ -82,8 +84,10 @@ export default function ChatPage() {
       addMessage({ text: "", sender: "model" });
 
       try {
-        const stream = await chatSession.sendMessageStream({ message: currentInput });
+        console.log("Enviando mensaje al modelo:", { message: { role: "user", parts: [{ text: currentInput }] } });
+        const stream = await chatSession.sendMessageStream({ message: { role: "user", parts: [{ text: currentInput }] } as any });
         for await (const chunk of stream) {
+          console.log(chunk);
           const functionResponsePart: any = chunk.candidates?.[0]?.content?.parts?.find(part => part.functionResponse);
           if (functionResponsePart) {
             const toolName = functionResponsePart.functionResponse.name;
@@ -95,6 +99,9 @@ export default function ChatPage() {
           } else if (chunk.text) {
             updateLastMessage({ newText: chunk.text });
           }
+        }
+        if (inputRef.current) {
+          inputRef.current.focus();
         }
       } catch (error) {
         console.error("Error al enviar el mensaje:", error);
@@ -117,6 +124,9 @@ export default function ChatPage() {
         const client = await initChat(storedKey);
         if (client) {
           clientRef.current = client;
+        }
+        if (inputRef.current) {
+          inputRef.current.focus();
         }
       } else {
         setShowModal(true);
@@ -413,6 +423,7 @@ export default function ChatPage() {
               </svg>
             </button>
             <input
+              ref={inputRef}
               type="text"
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
