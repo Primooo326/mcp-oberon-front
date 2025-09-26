@@ -1,13 +1,15 @@
 "use client";
 import { useEffect, useState, useRef, useCallback } from "react";
-import useChatStore, { Message } from "../store";
+import useChatStore, { Message, AiModel } from "../store";
 import { GoogleGenAI, mcpToTool } from "@google/genai";
-import { GOOGLE_API_KEY, MCP_SERVER_URL, SYSTEM_PROMPT_LUNA } from "@/config";
+import OpenAI from "openai";
+import { GOOGLE_API_KEY, MCP_SERVER_URL, SYSTEM_PROMPT_LUNA, OPENAI_API_KEY } from "@/config";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import LoginModal from "../components/LoginModal";
 import useAuthStore from "../store/authStore";
 import ReactMarkdown from 'react-markdown';
+import ModelSelector from "../components/ModelSelector";
 
 interface CustomSpeechRecognition extends SpeechRecognition {
   continuous: boolean;
@@ -19,7 +21,7 @@ interface CustomSpeechRecognition extends SpeechRecognition {
 const SILENCE_DELAY = 1500; // 1.5 segundos
 
 export default function ChatPage() {
-  const { messages, addMessage, updateLastMessage, chatSession, setChatSession } = useChatStore();
+  const { messages, addMessage, updateLastMessage, chatSession, setChatSession, selectedModel, clearChat } = useChatStore();
   const [inputValue, setInputValue] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const chatContainerRef = useRef<HTMLDivElement>(null);
@@ -30,13 +32,18 @@ export default function ChatPage() {
   const recognitionRef = useRef<CustomSpeechRecognition | null>(null);
   const clientRef = useRef<Client | null>(null);
 
-  // Refs para manejar el temporizador y la función de envío
   const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const handleSendMessageRef = useRef<() => Promise<void>>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const initChat = async (key: string) => {
-    console.log("Iniciando conexión del chat...");
+  const initChat = useCallback(async (key: string) => {
+    console.log(`Iniciando conexión del chat para el modelo: ${selectedModel}...`);
+
+    if (clientRef.current) {
+      clientRef.current.close();
+      clientRef.current = null;
+    }
+
     const transportOberon = new StreamableHTTPClientTransport(new URL(MCP_SERVER_URL), {
       requestInit: { headers: { 'x-api-key': key } }
     });
@@ -44,73 +51,126 @@ export default function ChatPage() {
 
     try {
       await clientOberon.connect(transportOberon);
-      console.log("✅ Cliente conectado.");
+      console.log("✅ Cliente MCP conectado.");
+      clientRef.current = clientOberon;
 
-      const { tools }: any = await clientOberon.listTools();
-      console.log("Herramientas disponibles:", tools);
+      const { tools: mcpTools }: any = await clientOberon.listTools();
+      console.log("Herramientas MCP disponibles:", mcpTools);
 
-      const ai = new GoogleGenAI({ apiKey: GOOGLE_API_KEY });
-      const chat = ai.chats.create({
-        config: { tools: [mcpToTool(clientOberon)], systemInstruction: { parts: [{ text: SYSTEM_PROMPT_LUNA }] } },
-        // model: "gemini-2.5-pro",
-        model: "gemini-2.5-flash-lite",
-      });
+      if (selectedModel === 'google') {
+        const ai = new GoogleGenAI({ apiKey: GOOGLE_API_KEY });
+        const chat = ai.chats.create({
+          config: { tools: [mcpToTool(clientOberon)], systemInstruction: { parts: [{ text: SYSTEM_PROMPT_LUNA }] } },
+          model: "gemini-1.5-flash",
+        });
+        setChatSession(chat);
+        console.log("✅ Chat de Google inicializado.");
 
-      setChatSession(chat);
-      console.log("✅ Chat inicializado y listo.");
-      return clientOberon;
+      } else if (selectedModel === 'openai') {
+        const openai = new OpenAI({ apiKey: OPENAI_API_KEY, dangerouslyAllowBrowser: true, });
+        setChatSession(openai);
+        console.log("✅ Cliente de OpenAI inicializado.");
+      }
+
     } catch (error) {
       console.error("❌ Falló la inicialización del chat:", error);
       clientOberon.close();
-      return null;
+      clientRef.current = null;
     }
-  };
+  }, [selectedModel, setChatSession]);
 
   const handleSendMessage = useCallback(async () => {
-    if (silenceTimerRef.current) {
-      clearTimeout(silenceTimerRef.current);
-    }
-    if (isListening && recognitionRef.current) {
-      recognitionRef.current.stop();
-    }
+    if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+    if (isListening && recognitionRef.current) recognitionRef.current.stop();
 
     const currentInput = inputValue.trim();
+    if (!currentInput || !chatSession || isStreaming || !apiKey) return;
 
-    if (currentInput && chatSession && !isStreaming && apiKey) {
-      const userMessage: Message = { text: currentInput, sender: "user" };
-      addMessage(userMessage);
-      setInputValue("");
-      setIsStreaming(true);
-      addMessage({ text: "", sender: "model" });
+    addMessage({ text: currentInput, sender: "user" });
+    setInputValue("");
+    setIsStreaming(true);
+    addMessage({ text: "", sender: "model" });
 
-      try {
-        console.log("Enviando mensaje al modelo:", { message: { role: "user", parts: [{ text: currentInput }] } });
-        const stream = await chatSession.sendMessageStream({ message: { role: "user", parts: [{ text: currentInput }] } as any });
+    try {
+      if (selectedModel === 'google') {
+        const stream = await (chatSession as any).sendMessageStream({ message: { role: "user", parts: [{ text: currentInput }] } });
         for await (const chunk of stream) {
-          console.log(chunk);
-          const functionResponsePart: any = chunk.candidates?.[0]?.content?.parts?.find(part => part.functionResponse);
+          const functionResponsePart = chunk.candidates?.[0]?.content?.parts?.find((part: any) => part.functionResponse);
           if (functionResponsePart) {
-            const toolName = functionResponsePart.functionResponse.name;
-            const toolResponse = functionResponsePart.functionResponse.response;
-            console.log(`🛠️ Usando herramienta: ${toolName}`, toolResponse);
             updateLastMessage({
-              toolUsage: { name: toolName, response: toolResponse }
+              toolUsage: {
+                name: functionResponsePart.functionResponse.name,
+                response: functionResponsePart.functionResponse.response
+              }
             });
           } else if (chunk.text) {
             updateLastMessage({ newText: chunk.text });
           }
         }
-        if (inputRef.current) {
-          inputRef.current.focus();
+      } else if (selectedModel === 'openai' && clientRef.current) {
+        const { tools: mcpTools } = await clientRef.current.listTools();
+
+        const mcpToolsForOpenAI = mcpTools.map((tool: any) => ({
+          type: 'function',
+          function: {
+            name: tool.name,
+            description: tool.description,
+            parameters: tool.parameters
+          }
+        }));
+
+        const openai = chatSession as OpenAI;
+        const stream = await openai.chat.completions.create({
+          model: 'gpt-4o',
+          messages: [
+            { role: 'system', content: SYSTEM_PROMPT_LUNA },
+            ...messages.slice(1, -1).map(m => ({
+              role: m.sender === 'user' ? 'user' : 'assistant' as 'user' | 'assistant',
+              content: m.text
+            })),
+            { role: 'user', content: currentInput }
+          ],
+          tools: mcpToolsForOpenAI as any,
+          stream: true,
+        });
+
+        for await (const chunk of stream) {
+          const delta = chunk.choices[0]?.delta;
+
+          if (delta?.content) {
+            updateLastMessage({ newText: delta.content });
+          }
+
+          if (delta?.tool_calls) {
+            const toolCall = delta.tool_calls[0];
+            if (toolCall.function?.name) {
+              const toolName = toolCall.function.name;
+              const toolArgs = JSON.parse(toolCall.function.arguments || '{}');
+              console.log(`🛠️ Usando herramienta (OpenAI): ${toolName}`, toolArgs);
+              updateLastMessage({ toolUsage: { name: toolName, response: "Procesando..." } });
+
+              try {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const toolResult = await (clientRef.current as any).call(toolName, toolArgs, {});
+                // OpenAI espera una respuesta para la herramienta
+                // Por ahora, solo actualizamos nuestra UI
+                updateLastMessage({ toolUsage: { name: toolName, response: toolResult } });
+              } catch (e) {
+                console.error(`Error al ejecutar la herramienta ${toolName}:`, e);
+                updateLastMessage({ toolUsage: { name: toolName, response: "Error al ejecutar." } });
+              }
+            }
+          }
         }
-      } catch (error) {
-        console.error("Error al enviar el mensaje:", error);
-        updateLastMessage({ newText: "Lo siento, ocurrió un error." });
-      } finally {
-        setIsStreaming(false);
       }
+    } catch (error) {
+      console.error("Error al enviar el mensaje:", error);
+      updateLastMessage({ newText: "Lo siento, ocurrió un error." });
+    } finally {
+      setIsStreaming(false);
+      if (inputRef.current) inputRef.current.focus();
     }
-  }, [inputValue, chatSession, isStreaming, apiKey, addMessage, updateLastMessage, isListening]);
+  }, [inputValue, chatSession, isStreaming, apiKey, addMessage, updateLastMessage, isListening, selectedModel, messages]);
 
   useEffect(() => {
     handleSendMessageRef.current = handleSendMessage;
@@ -121,20 +181,13 @@ export default function ChatPage() {
       const storedKey = localStorage.getItem('x-api-key');
       if (storedKey) {
         setApiKey(storedKey);
-        const client = await initChat(storedKey);
-        if (client) {
-          clientRef.current = client;
-        }
-        if (inputRef.current) {
-          inputRef.current.focus();
-        }
+        await initChat(storedKey);
       } else {
         setShowModal(true);
       }
     };
     initialize();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [initChat]);
 
   useEffect(() => {
     return () => {
@@ -154,16 +207,19 @@ export default function ChatPage() {
       localStorage.setItem('x-api-key', token);
       setApiKey(token);
       setShowModal(false);
-      const initializeClient = async () => {
-        const client = await initChat(token);
-        if (client) {
-          clientRef.current = client;
-        }
-      };
-      initializeClient();
+      initChat(token);
+    }
+  }, [isAuthenticated, token, initChat]);
+
+  // Recargar el chat cuando el modelo cambia
+  useEffect(() => {
+    const storedKey = localStorage.getItem('x-api-key');
+    if (storedKey) {
+      initChat(storedKey);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated, token]);
+  }, [selectedModel]);
+
 
   useEffect(() => {
     if (chatContainerRef.current) {
@@ -231,7 +287,10 @@ export default function ChatPage() {
     <>
       <div className="flex flex-col h-screen bg-base-100 p-4 sm:p-8 items-center gap-4">
         <header className="w-full max-w-4xl text-center mb-2">
-          <h1 className="text-3xl font-bold text-primary">Luna</h1>
+          <div className="flex items-center justify-center gap-4">
+            <h1 className="text-3xl font-bold text-primary">Luna</h1>
+            <ModelSelector />
+          </div>
         </header>
 
         <div ref={chatContainerRef} className="flex-grow p-6 overflow-auto w-full max-w-4xl bg-base-300 rounded-2xl">

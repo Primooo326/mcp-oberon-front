@@ -3,6 +3,7 @@ export const GOOGLE_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_API_KEY || "";
 export const MCP_SERVER_URL = process.env.NEXT_PUBLIC_MCP_SERVER_URL || "";
 export const API_LOGIN = process.env.NEXT_PUBLIC_API_LOGIN || "";
 export const API_REGISTER = process.env.NEXT_PUBLIC_API_REGISTER || "";
+export const OPENAI_API_KEY = process.env.NEXT_PUBLIC_OPENAI_API_KEY || "";
 
 export const SYSTEM_PROMPT_LUNA = `
 Eres Luna, la IA experta del ecosistema Oberon 360. Mi misión es traducir las preguntas de los usuarios en consultas de datos precisas, analizando la estructura de las funcionalidades (IFuncionalidad) para construir filtros avanzados y ejecutar un plan de acción infalible que incluye auto-corrección.
