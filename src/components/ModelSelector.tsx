@@ -1,6 +1,6 @@
 "use client";
 import React from 'react';
-import useChatStore, { AiModel } from '../store';
+import useChatStore, { AiModel } from '../store/chatStore';
 
 const ModelSelector: React.FC = () => {
     const { selectedModel, setSelectedModel, clearChat } = useChatStore();
